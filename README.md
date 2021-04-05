@@ -1,2 +1,2 @@
-# polkasort
-Sorting Polkamon based on Score
+# PolkaSort
+Sorting Polkamon Based on Score

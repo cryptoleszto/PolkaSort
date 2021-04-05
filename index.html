@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Polkamon Score</title>
+    <script src="https://code.jquery.com/jquery-3.5.0.min.js"></script>
+    <script src="ajaxthrottle.js"></script>
+    <meta charset="utf-8"/>
+    <link rel="stylesheet" href="polka_sort.css">
+</head>
+
+<body>
+    <form>
+        <input type="text" name="Address" id="addr"><br>
+        <button type="button" onclick="score_pmons()">Search</button>
+        <span id="progress"></span>
+    </form>
+
+    <div class="table">
+
+    </div>
+
+    <script>
+
+        const base_url = 'https://meta.polkamon.com/';
+        const scr_head = 'ID,IMAGE,BOOSTER,TYPE_NAME,HORN_NAME,COLOR_NAME,GLITTER_VALUE,TYPE_PROB,HORN_PROB,COLOR_PROB,GLITTER_PROB,SCORE'
+        const image_w = "100"
+        const image_h = "100"
+
+        let t = $.ajaxthrottle({
+            numRequestsPerTimePeriod : 10,
+            timePeriod               : 1000,
+            maxConcurrent            : 5
+            });
+
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+
+
+        function get_pmon_ids(addr)
+        {
+
+            return new Promise((resolve, reject) => {
+
+                const action = '.netlify/functions/ids-get?address=';
+                let addr_url = base_url+action+addr;
+                let data = {};
+                let ids = []
+
+                 $.ajax({
+                     type: 'GET',
+                     url: addr_url,
+                     dataType: 'json',
+                     data: data,
+                     success: function(data){
+                         ids = data['ids'];
+                         //ids = ids.slice(0,6);
+                         resolve(ids)
+                     },
+                     error: function (error) {
+                        reject(error)
+                     },
+                 })
+            })
+
+        }
+
+
+
+
+        // Get Polkamon Attributes, add Id, and Calculate Scores
+        function get_pmon_attrs(id)
+        {
+
+            return new Promise((resolve, reject) => {
+
+                const action = 'meta?id=';
+                let attr_url = base_url+action+id;
+                let data = {}
+                let attrs = {};
+                t.ajax({
+                    type: 'GET',
+                    url: attr_url,
+                    dataType: 'json',
+                    data: data,
+                    success: function(data) {
+                        attrs['Image'] = data.image;
+                        attrs['Booster'] = data.boosterId;
+                        attrs['Type_Name'] = data.name
+                        attrs['Horn_Name'] = data.attributes.find(x => x.trait_type === 'Horn').value;
+                        attrs['Color_Name'] = data.attributes.find(x => x.trait_type === 'Color').value;
+                        attrs['Glitter_Value'] = data.attributes.find(x => x.trait_type === 'Glitter').value;
+                        attrs['Type_Prob'] = data.initialProbabilities.type
+                        attrs['Horn_Prob'] = data.initialProbabilities.horn
+                        attrs['Color_Prob'] = data.initialProbabilities.color
+                        attrs['Glitter_Prob'] = data.initialProbabilities.glitter
+                        attrs['Score'] = Math.round(1/(data.initialProbabilities.type*data.initialProbabilities.horn*data.initialProbabilities.color*data.initialProbabilities.glitter))
+                        resolve(attrs)
+                    },
+                    error: function (error) {
+                        reject(error)
+                    },
+                });
+            });
+        };
+
+
+        function create_comp(elem, attr, val)
+        {
+            let comp = document.createElement(elem);
+            comp.setAttribute(attr, val);
+
+            return comp;
+        }
+
+
+        function create_table(pmon_attr)
+        {
+            let head = scr_head.split(',')
+            console.log(head);
+
+            let cnt = 0;
+
+            let table = document.querySelector(".table");
+            let row = create_comp('div', 'class', 'row');
+            head.forEach(function(item,index){
+                    let col = create_comp('div', 'class', 'col');
+                    let attr = document.createTextNode(item);
+                    col.append(attr);
+                    row.appendChild(col);
+                });
+            table.appendChild(row);
+
+            // Add Table Rows
+            pmon_attr.forEach(function(item,index){
+
+                cnt++;
+
+                let row = create_comp('div', 'class', 'row');
+
+                let col = create_comp('div', 'class', 'col')
+                let attr = document.createTextNode(cnt);
+                col.append(attr);
+                row.appendChild(col);
+
+                // Add Table Columns
+                for (let key in item) {
+                    if (item.hasOwnProperty(key)) {
+
+                        let col = create_comp('div', 'class', 'col')
+
+                        if(key === 'Image'){
+                            let img = create_comp('img', 'src', item[key])
+                            img.width = image_w;
+                            img.height = image_h;
+                            col.append(img);
+                        }
+                        else{
+                            let attr = document.createTextNode(item[key]);
+                            col.append(attr);
+                        }
+                        row.appendChild(col);
+                    }
+               }
+               table.appendChild(row);
+           });
+        }
+
+
+
+
+        function score_pmons()
+        {
+
+            const addr = document.getElementById('addr').value;
+            const table = document.querySelector(".table");
+            while (table.firstChild) {
+                    table.removeChild(table.firstChild);
+            }
+
+            let attr_list = [];
+
+            get_pmon_ids(addr)
+                .then((ids) =>
+                {
+                    let item_num = ids.length
+                    let processed = 1
+                    async function concat_pmons(ids) {
+                        ids.forEach(function (id, index) {
+                            attr_list.push(new Promise((resolve, reject) => {
+                                get_pmon_attrs(id)
+                                    .then((attrs) => {
+                                        resolve(attrs)
+                                        span = document.getElementById("progress");
+                                        span.textContent = 'Num of Polkas: '+item_num+' / Polkas Processed: '+processed++
+
+                                    })
+                            }))
+                        })
+                        attr_list = await Promise.all(attr_list)
+                        attr_list.sort((a,b) => (a.Score > b.Score) ? -1 : 1);
+
+                    create_table(attr_list)
+                    }
+
+                    concat_pmons(ids)
+
+                })
+        };
+    </script>
+</body>
+</html>
