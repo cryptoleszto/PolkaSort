@@ -44,7 +44,7 @@
 
             return new Promise((resolve, reject) => {
 
-                const action = '.netlify/functions/ids-get?address=';
+                const action = '.netlify/functions/meta-get-by-address?address=';
                 let addr_url = base_url+action+addr;
                 let data = {};
                 let ids = []
